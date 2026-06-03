@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>DesignLab Social Media Planner</title>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-icon">DL</div>
+
+        <div>
+          <p class="brand-kicker">DesignLab</p>
+          <h1>Content Planner</h1>
+          <p class="brand-subtitle">Social media calendar</p>
+        </div>
+      </div>
+
+      <div class="palette-preview">
+        <span class="swatch white"></span>
+        <span class="swatch blue"></span>
+        <span class="swatch light-blue"></span>
+        <span class="swatch charcoal"></span>
+        <span class="swatch navy"></span>
+        <span class="swatch coral"></span>
+      </div>
+
+      <div class="sidebar-section">
+        <p class="section-label">Managed Pages</p>
+
+        <nav class="page-tabs" id="pageTabs">
+          <!-- Tabs will load from Google Sheets -->
+        </nav>
+      </div>
+
+      <div class="sidebar-card">
+        <p class="mini-label">Today’s Focus</p>
+        <h3>Plan. Create. Schedule.</h3>
+        <p>Keep every post organized per page, per date, and per status.</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Monthly Calendar</p>
+          <h2 id="monthTitle">Loading...</h2>
+          <p class="current-page" id="currentPageLabel">Loading page...</p>
+        </div>
+
+        <div class="month-controls">
+          <button id="prevMonth" class="ghost-btn">← Previous</button>
+          <button id="todayBtn" class="primary-btn">Today</button>
+          <button id="nextMonth" class="ghost-btn">Next →</button>
+        </div>
+      </header>
+
+      <section class="stats-row">
+        <div class="stat-card">
+          <p>Ideas</p>
+          <h3 id="ideaCount">0</h3>
+        </div>
+
+        <div class="stat-card">
+          <p>Created</p>
+          <h3 id="createdCount">0</h3>
+        </div>
+
+        <div class="stat-card">
+          <p>Scheduled</p>
+          <h3 id="scheduledCount">0</h3>
+        </div>
+
+        <div class="stat-card">
+          <p>Posted</p>
+          <h3 id="postedCount">0</h3>
+        </div>
+      </section>
+
+      <section class="legend">
+        <span><i class="dot idea-dot"></i> Idea</span>
+        <span><i class="dot created-dot"></i> Created</span>
+        <span><i class="dot scheduled-dot"></i> Scheduled</span>
+        <span><i class="dot posted-dot"></i> Posted</span>
+      </section>
+
+      <section class="calendar-panel">
+        <div class="weekdays">
+          <div>Sun</div>
+          <div>Mon</div>
+          <div>Tue</div>
+          <div>Wed</div>
+          <div>Thu</div>
+          <div>Fri</div>
+          <div>Sat</div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="modal hidden" id="postModal">
+    <div class="modal-card">
+
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Manage Post</p>
+          <h3 id="modalDateLabel">Date</h3>
+        </div>
+
+        <button class="close-btn" id="closeModal">×</button>
+      </div>
+
+      <form id="postForm">
+        <input type="hidden" id="postId" />
+        <input type="hidden" id="postDate" />
+
+        <label>
+          Post Title
+          <input
+            type="text"
+            id="postTitle"
+            placeholder="Daily Posting #1 - Design is Simple"
+            required
+          />
+        </label>
+
+        <label>
+          Caption / Content Notes
+          <textarea
+            id="postCaption"
+            placeholder="Write caption, hook, content idea, or reminders here..."
+          ></textarea>
+        </label>
+
+        <div class="form-row">
+          <label>
+            Status
+            <select id="postStatus">
+              <option value="Idea">Idea</option>
+              <option value="Created">Created</option>
+              <option value="Scheduled">Scheduled</option>
+              <option value="Posted">Posted</option>
+            </select>
+          </label>
+
+          <label>
+            Platform
+            <select id="postPlatform">
+              <option value="Facebook">Facebook</option>
+              <option value="Instagram">Instagram</option>
+              <option value="TikTok">TikTok</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Multiple">Multiple</option>
+            </select>
+          </label>
+        </div>
+
+        <label>
+          Notes
+          <textarea
+            id="postNotes"
+            placeholder="Example: Needs poster, scheduled at 6AM, waiting for caption, carousel, etc."
+          ></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button type="button" class="delete-btn hidden" id="deletePost">Delete Post</button>
+          <button type="submit" class="save-btn">Save Post</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
