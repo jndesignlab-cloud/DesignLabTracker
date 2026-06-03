@@ -14,6 +14,10 @@
 
   --coral: #f86666;
 
+  --yellow: #facc15;
+  --gray: #9ca3af;
+  --green: #19b36b;
+
   --muted: #73809d;
   --border: rgba(17, 26, 59, 0.09);
   --shadow-soft: 0 24px 70px rgba(40, 77, 151, 0.12);
@@ -86,8 +90,7 @@ button {
   color: white;
   font-weight: 900;
   letter-spacing: -1px;
-  background:
-    linear-gradient(145deg, var(--blue), var(--navy));
+  background: linear-gradient(145deg, var(--blue), var(--navy));
   box-shadow: 0 18px 40px rgba(47, 104, 223, 0.24);
 }
 
@@ -327,6 +330,8 @@ button {
   letter-spacing: -0.06em;
 }
 
+/* Legend */
+
 .legend {
   display: flex;
   gap: 18px;
@@ -355,20 +360,22 @@ button {
   display: inline-block;
 }
 
+/* Updated Status Colors */
+
 .idea-dot {
-  background: #9aa6bd;
+  background: var(--yellow);
 }
 
 .created-dot {
-  background: var(--blue);
+  background: var(--gray);
 }
 
 .scheduled-dot {
-  background: var(--navy);
+  background: var(--blue);
 }
 
 .posted-dot {
-  background: #19b36b;
+  background: var(--green);
 }
 
 /* Calendar */
@@ -459,7 +466,7 @@ button {
   border-radius: 14px;
   background: rgba(255,255,255,0.94);
   border: 1px solid rgba(17, 26, 59, 0.06);
-  border-left: 4px solid #9aa6bd;
+  border-left: 4px solid var(--yellow);
   box-shadow: 0 10px 22px rgba(40, 77, 151, 0.08);
   transition: 0.16s ease;
 }
@@ -483,20 +490,22 @@ button {
   color: var(--muted);
 }
 
+/* Updated Post Status Borders */
+
 .post-pill.idea {
-  border-left-color: #9aa6bd;
+  border-left-color: var(--yellow);
 }
 
 .post-pill.created {
-  border-left-color: var(--blue);
+  border-left-color: var(--gray);
 }
 
 .post-pill.scheduled {
-  border-left-color: var(--navy);
+  border-left-color: var(--blue);
 }
 
 .post-pill.posted {
-  border-left-color: #19b36b;
+  border-left-color: var(--green);
 }
 
 .add-hint {
