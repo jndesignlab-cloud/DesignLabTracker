@@ -1,4 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbw9BYgrSdpk1oy6ZhLUO0SVj-XrKycaYVkaMu1Om4XLoi8aERxr3IoNtAxQOIyaWgAv/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbykZtV6k4xfAOAr8oo17v2CxsMeVIrt-baZDCqAXuP3l5xyi1lH0s7KLa3MZYHxwVe8gw/exec";
 
 let currentDate = new Date();
 let selectedPage = "";
