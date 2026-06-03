@@ -1,4 +1,4 @@
-const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+const API_URL = "https://script.google.com/macros/s/AKfycbw9BYgrSdpk1oy6ZhLUO0SVj-XrKycaYVkaMu1Om4XLoi8aERxr3IoNtAxQOIyaWgAv/exec";
 
 let currentDate = new Date();
 let selectedPage = "";
