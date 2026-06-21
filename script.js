@@ -1,289 +1,505 @@
-const CONFIG = window.DLAB_CONFIG || {};
-const API_URL = CONFIG.apiUrl || "";
+(() => {
+  "use strict";
 
-let selectedDateTasks = [];
-let allTasks = [];
-let editingTaskId = null;
+  const config = window.APP_CONFIG || {};
+  const API_URL = String(config.API_URL || "").trim();
+  const STATUS_ORDER = Array.isArray(config.STATUS_ORDER)
+    ? config.STATUS_ORDER
+    : ["Idea", "Created", "Scheduled", "Posted"];
 
-const categoryOptions = ["PERSONAL", "PAGE", "BUSINESS", "WORK", "LEISURE"];
-const urgencyOptions = ["Today’s Priority", "High Priority", "Weekly Task", "Daily Task", "Low Priority"];
-const statusOptions = ["Pending", "In Progress", "Completed", "Cancelled"];
+  let currentDate = new Date();
+  let selectedPage = "";
+  let pages = [];
+  let posts = [];
+  let clockTimer = null;
+  let toastTimer = null;
 
-const $ = id => document.getElementById(id);
+  const $ = id => document.getElementById(id);
+  const calendarGrid = $("calendarGrid");
+  const monthTitle = $("monthTitle");
+  const currentPageLabel = $("currentPageLabel");
+  const pageTabs = $("pageTabs");
+  const refreshButton = $("refreshButton");
+  const toast = $("toast");
 
-document.addEventListener("DOMContentLoaded", initializeApp);
+  const counters = {
+    idea: $("ideaCount"),
+    created: $("createdCount"),
+    scheduled: $("scheduledCount"),
+    posted: $("postedCount")
+  };
 
-function initializeApp() {
-  applyConfig();
-  setupCurrentDate();
-  setupLiveClock();
-  setupDropdowns();
-  setupEventListeners();
-  loadAllData();
-}
+  const modal = $("postModal");
+  const postForm = $("postForm");
+  const closeModalButton = $("closeModal");
+  const deletePostButton = $("deletePost");
 
-function applyConfig() {
-  document.title = CONFIG.appName || "DesignLab Daily Tracker";
-  $("footerOwner").textContent = CONFIG.owner || "DesignLab Creative Studio";
-  $("footerVersion").textContent = `Version ${CONFIG.version || "1.1.0"}`;
-  const links = CONFIG.links || {};
-  $("dashboardLink").href = links.dashboard || "./";
-  setExternalLink("socialPlannerLink", links.socialMediaPlanner);
-  setExternalLink("portfolioViewerLink", links.portfolioViewer);
-  setExternalLink("portfolioAdminLink", links.portfolioAdmin);
-}
+  const inputs = {
+    id: $("postId"),
+    date: $("postDate"),
+    title: $("postTitle"),
+    time: $("postTime"),
+    caption: $("postCaption"),
+    status: $("postStatus"),
+    platform: $("postPlatform"),
+    notes: $("postNotes")
+  };
 
-function setExternalLink(id, url) {
-  const el = $(id);
-  if (!url || url.startsWith("PASTE_")) {
-    el.href = "#";
-    el.addEventListener("click", event => {
-      event.preventDefault();
-      showToast("Add this link in config.js first.", "error");
-    });
-    return;
+  document.addEventListener("DOMContentLoaded", init);
+
+  async function init() {
+    applyVersionInfo();
+    setupControls();
+    startClock();
+
+    if (!API_URL || API_URL.includes("PASTE_YOUR")) {
+      showToast("Add your Apps Script URL in config.js.", 5000);
+      monthTitle.textContent = formatMonthYear(currentDate);
+      renderCalendar();
+      return;
+    }
+
+    await refreshAll();
   }
-  el.href = url;
-}
 
-function setupCurrentDate() {
-  const today = new Date();
-  $("dateDisplay").textContent = today.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  $("dateFilter").value = formatDateForInput(today);
-  $("taskDate").value = formatDateForInput(today);
-}
+  function applyVersionInfo() {
+    $("footerAppName").textContent = config.APP_NAME || "DesignLab Content Planner";
+    $("footerVersion").textContent = config.APP_VERSION || "1.1.0";
+  }
 
-function setupLiveClock() {
-  const tick = () => $("timeDisplay").textContent = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  tick(); setInterval(tick, 1000);
-}
+  function setupControls() {
+    $("prevMonth").addEventListener("click", async () => {
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+      await loadPosts();
+    });
 
-function setupDropdowns() {
-  populateSelect($("categoryFilter"), ["All Categories", ...categoryOptions]);
-  populateSelect($("urgencyFilter"), ["All Urgencies", ...urgencyOptions]);
-  populateSelect($("statusFilter"), ["All Status", ...statusOptions]);
-  populateSelect($("taskCategory"), categoryOptions);
-  populateSelect($("taskUrgency"), urgencyOptions);
-  populateSelect($("taskStatus"), statusOptions);
-}
+    $("nextMonth").addEventListener("click", async () => {
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+      await loadPosts();
+    });
 
-function populateSelect(select, options) {
-  select.innerHTML = "";
-  options.forEach(value => select.add(new Option(value, value)));
-}
+    $("todayBtn").addEventListener("click", async () => {
+      currentDate = new Date();
+      await loadPosts();
+    });
 
-function setupEventListeners() {
-  $("addTaskBtn").addEventListener("click", openAddModal);
-  $("closeModalBtn").addEventListener("click", closeModal);
-  $("cancelTaskBtn").addEventListener("click", closeModal);
-  $("taskForm").addEventListener("submit", handleTaskSubmit);
-  ["searchInput", "categoryFilter", "urgencyFilter", "statusFilter"].forEach(id => $(id).addEventListener(id === "searchInput" ? "input" : "change", renderTasks));
-  $("dateFilter").addEventListener("change", loadSelectedDateTasks);
-  $("historySearchInput").addEventListener("input", renderTaskHistory);
-  $("historyStatusFilter").addEventListener("change", renderTaskHistory);
-  $("archiveToggle").addEventListener("click", toggleArchive);
-  $("viewPendingBtn").addEventListener("click", showAllPendingQueue);
-  $("refreshBtn").addEventListener("click", loadAllData);
-  $("statsBtn").addEventListener("click", openStatsDrawer);
-  $("closeStatsBtn").addEventListener("click", closeStatsDrawer);
-  $("drawerBackdrop").addEventListener("click", closeStatsDrawer);
-  window.addEventListener("click", event => { if (event.target === $("taskModal")) closeModal(); });
-}
+    refreshButton.addEventListener("click", refreshAll);
+    closeModalButton.addEventListener("click", closePostModal);
+    modal.addEventListener("click", event => {
+      if (event.target === modal) closePostModal();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") closePostModal();
+    });
+    postForm.addEventListener("submit", savePost);
+    deletePostButton.addEventListener("click", deletePost);
+  }
 
-async function apiGet(params = {}) {
-  ensureApiUrl();
-  const response = await fetch(`${API_URL}?${new URLSearchParams(params)}`);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
+  function startClock() {
+    updateClock();
+    clearInterval(clockTimer);
+    clockTimer = setInterval(updateClock, 1000);
+  }
 
-async function apiPost(payload = {}) {
-  ensureApiUrl();
-  const response = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
+  function updateClock() {
+    const now = new Date();
+    const locale = config.LOCALE || "en-PH";
+    const timeZone = config.TIME_ZONE || "Asia/Manila";
 
-function ensureApiUrl() {
-  if (!API_URL || API_URL.startsWith("PASTE_")) throw new Error("Add your Apps Script URL in config.js.");
-}
+    $("currentTime").textContent = new Intl.DateTimeFormat(locale, {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+      timeZone
+    }).format(now);
 
-async function loadAllData() {
-  showLoading(true);
-  try {
-    const result = await apiGet({ action: "getTasks" });
-    if (!result.success) throw new Error(result.message || "Failed to load tasks.");
-    allTasks = result.tasks || [];
-    selectedDateTasks = allTasks.filter(task => task.date === $("dateFilter").value);
-    renderEverything();
-    $("lastRefreshed").textContent = `Last refreshed: ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
-    showToast("Dashboard refreshed.", "success");
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "Could not load tasks.", "error");
-  } finally { showLoading(false); }
-}
+    $("currentDate").textContent = new Intl.DateTimeFormat(locale, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone
+    }).format(now);
+  }
 
-function loadSelectedDateTasks() {
-  selectedDateTasks = allTasks.filter(task => task.date === $("dateFilter").value);
-  renderDashboardStats();
-  renderTasks();
-}
+  async function refreshAll() {
+    setRefreshing(true);
+    try {
+      await loadPages();
+      await loadPosts();
+      $("lastUpdated").textContent = `Last refreshed: ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      showToast("Planner refreshed.");
+    } catch (error) {
+      console.error(error);
+      showToast("Could not refresh the planner.", 4000);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
-function renderEverything() {
-  renderDashboardStats();
-  renderTasks();
-  renderPendingAlert();
-  renderTaskHistory();
-  renderStats();
-}
+  function setRefreshing(isLoading) {
+    refreshButton.classList.toggle("loading", isLoading);
+    refreshButton.disabled = isLoading;
+  }
 
-function renderDashboardStats() {
-  const completed = selectedDateTasks.filter(t => t.status === "Completed").length;
-  const pending = selectedDateTasks.filter(t => t.status === "Pending").length;
-  const high = selectedDateTasks.filter(t => ["Today’s Priority", "High Priority"].includes(t.urgency) && t.status !== "Completed").length;
-  $("todayTasksCount").textContent = selectedDateTasks.length;
-  $("completedCount").textContent = completed;
-  $("pendingCount").textContent = pending;
-  $("highPriorityCount").textContent = high;
-}
+  function jsonp(params = {}) {
+    return new Promise((resolve, reject) => {
+      const callbackName = `dlTrackerCallback_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const script = document.createElement("script");
+      const timeout = window.setTimeout(() => cleanup(new Error("Request timed out.")), 15000);
 
-function getPendingTasks() {
-  return allTasks.filter(task => ["Pending", "In Progress"].includes(task.status)).sort((a, b) => {
-    const urgencyRank = { "Today’s Priority": 0, "High Priority": 1, "Daily Task": 2, "Weekly Task": 3, "Low Priority": 4 };
-    return (urgencyRank[a.urgency] ?? 9) - (urgencyRank[b.urgency] ?? 9) || new Date(a.date) - new Date(b.date);
-  });
-}
+      function cleanup(error, data) {
+        clearTimeout(timeout);
+        if (script.parentNode) script.parentNode.removeChild(script);
+        delete window[callbackName];
+        error ? reject(error) : resolve(data);
+      }
 
-function renderPendingAlert() {
-  const pending = getPendingTasks();
-  $("allPendingCount").textContent = pending.length;
-  const preview = pending.slice(0, 3).map(t => t.taskName).join(" • ");
-  $("pendingAlertText").textContent = pending.length ? `Next to work on: ${preview}${pending.length > 3 ? "…" : ""}` : "You have no pending tasks. Great work!";
-  $("pendingAlert").classList.toggle("clear", pending.length === 0);
-}
+      window[callbackName] = data => cleanup(null, data);
+      script.onerror = () => cleanup(new Error("API request failed."));
+      script.src = `${API_URL}?${new URLSearchParams({ ...params, callback: callbackName })}`;
+      document.body.appendChild(script);
+    });
+  }
 
-function showAllPendingQueue() {
-  $("dateFilter").value = "";
-  selectedDateTasks = getPendingTasks();
-  $("statusFilter").value = "All Status";
-  renderDashboardStats();
-  renderTasks();
-  $("todayTasksSection").scrollIntoView({ behavior: "smooth" });
-  showToast("Showing pending tasks from all dates.", "success");
-}
+  async function loadPages() {
+    const response = await jsonp({ action: "getPages" });
+    if (!response.success) throw new Error(response.message || "Could not load pages.");
 
-function renderTasks() {
-  const body = $("taskTableBody");
-  const filtered = getFilteredTasks();
-  body.innerHTML = "";
-  $("emptyState").style.display = filtered.length ? "none" : "block";
-  filtered.forEach(task => {
-    const row = document.createElement("tr");
-    row.innerHTML = `<td><div class="task-name">${escapeHTML(task.taskName)}</div>${task.remarks ? `<div class="task-remarks">${escapeHTML(task.remarks)}</div>` : ""}</td><td>${escapeHTML(task.timeSlot || "—")}</td><td><span class="pill category-${slugify(task.category)}">${escapeHTML(task.category)}</span></td><td><span class="pill urgency-${slugify(task.urgency)}">${escapeHTML(task.urgency)}</span></td><td><span class="status status-${slugify(task.status)}">${escapeHTML(task.status)}</span></td><td><div class="action-buttons"><button class="icon-btn edit" onclick="openEditModal('${task.taskId}')" title="Edit">✎</button><button class="icon-btn delete" onclick="handleDeleteTask('${task.taskId}')" title="Delete">⌫</button><button class="icon-btn complete" onclick="handleCompleteTask('${task.taskId}')" title="Complete">✓</button></div></td>`;
-    body.appendChild(row);
-  });
-}
+    pages = response.pages || [];
+    if (!pages.length) {
+      selectedPage = "";
+      pageTabs.innerHTML = '<p class="empty-tabs">No active pages found.</p>';
+      currentPageLabel.textContent = "No page selected";
+      return;
+    }
 
-function getFilteredTasks() {
-  let filtered = [...selectedDateTasks];
-  const term = $("searchInput").value.toLowerCase().trim();
-  if (term) filtered = filtered.filter(t => [t.taskName, t.remarks, t.category, t.urgency, t.status].join(" ").toLowerCase().includes(term));
-  if ($("categoryFilter").value !== "All Categories") filtered = filtered.filter(t => t.category === $("categoryFilter").value);
-  if ($("urgencyFilter").value !== "All Urgencies") filtered = filtered.filter(t => t.urgency === $("urgencyFilter").value);
-  if ($("statusFilter").value !== "All Status") filtered = filtered.filter(t => t.status === $("statusFilter").value);
-  return filtered.sort((a, b) => convertTimeToMinutes(a.timeSlot) - convertTimeToMinutes(b.timeSlot));
-}
+    const preferred = config.DEFAULT_PAGE;
+    const existingSelection = pages.find(page => page.PageName === selectedPage);
+    const defaultPage = pages.find(page => page.PageName === preferred) || pages[0];
+    selectedPage = existingSelection ? existingSelection.PageName : defaultPage.PageName;
+    currentPageLabel.textContent = selectedPage;
+    renderPageTabs();
+  }
 
-function toggleArchive() {
-  const content = $("archiveContent");
-  const willOpen = content.hidden;
-  content.hidden = !willOpen;
-  $("archiveToggle").setAttribute("aria-expanded", String(willOpen));
-  $("archiveChevron").textContent = willOpen ? "⌃" : "⌄";
-}
+  function renderPageTabs() {
+    pageTabs.innerHTML = "";
+    const fragment = document.createDocumentFragment();
 
-function renderTaskHistory() {
-  const body = $("historyTableBody");
-  const term = $("historySearchInput").value.toLowerCase().trim();
-  const status = $("historyStatusFilter").value;
-  let history = [...allTasks].sort((a, b) => new Date(b.date) - new Date(a.date));
-  if (term) history = history.filter(t => [t.taskName, t.remarks, t.category, t.urgency, t.status, t.date].join(" ").toLowerCase().includes(term));
-  if (status !== "All Status") history = history.filter(t => t.status === status);
-  body.innerHTML = history.length ? "" : `<tr><td colspan="6" class="empty-history">No matching archived tasks.</td></tr>`;
-  history.slice(0, 100).forEach(task => {
-    const row = document.createElement("tr");
-    row.innerHTML = `<td>${formatDateForDisplay(task.date)}</td><td>${escapeHTML(task.taskName)}</td><td><span class="pill category-${slugify(task.category)}">${escapeHTML(task.category)}</span></td><td><span class="pill urgency-${slugify(task.urgency)}">${escapeHTML(task.urgency)}</span></td><td><span class="status status-${slugify(task.status)}">${escapeHTML(task.status)}</span></td><td>${escapeHTML(task.completedAt || "—")}</td>`;
-    body.appendChild(row);
-  });
-}
+    pages.forEach(page => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `tab${page.PageName === selectedPage ? " active" : ""}`;
+      button.textContent = page.PageName;
+      button.addEventListener("click", () => {
+        selectedPage = page.PageName;
+        currentPageLabel.textContent = selectedPage;
+        renderPageTabs();
+        renderCalendar();
+      });
+      fragment.appendChild(button);
+    });
 
-function renderStats() {
-  const total = allTasks.length;
-  const completed = allTasks.filter(t => t.status === "Completed").length;
-  const pending = getPendingTasks().length;
-  const high = allTasks.filter(t => ["Today’s Priority", "High Priority"].includes(t.urgency)).length;
-  const rate = total ? Math.round((completed / total) * 100) : 0;
-  const weekStart = new Date(); weekStart.setHours(0,0,0,0); weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  const completedWeek = allTasks.filter(t => t.status === "Completed" && t.completedAt && new Date(t.completedAt.replace(" ", "T")) >= weekStart).length;
-  const categoryCounts = allTasks.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + 1; return acc; }, {});
-  const topCategory = Object.entries(categoryCounts).sort((a,b) => b[1]-a[1])[0]?.[0] || "—";
-  const activeDays = new Set(allTasks.map(t => t.date).filter(Boolean)).size;
-  $("statTotalTasks").textContent = total;
-  $("statTotalCompleted").textContent = completed;
-  $("statCurrentPending").textContent = pending;
-  $("statHighPriority").textContent = high;
-  $("statCompletionRate").textContent = `${rate}%`;
-  $("statCompletedWeek").textContent = completedWeek;
-  $("statTopCategory").textContent = topCategory;
-  $("statDailyAverage").textContent = activeDays ? (total / activeDays).toFixed(1) : "0";
-}
+    pageTabs.appendChild(fragment);
+  }
 
-function openStatsDrawer() { $("statsDrawer").classList.add("open"); $("drawerBackdrop").classList.add("show"); $("statsDrawer").setAttribute("aria-hidden", "false"); }
-function closeStatsDrawer() { $("statsDrawer").classList.remove("open"); $("drawerBackdrop").classList.remove("show"); $("statsDrawer").setAttribute("aria-hidden", "true"); }
+  async function loadPosts() {
+    monthTitle.textContent = formatMonthYear(currentDate);
 
-function openAddModal() {
-  editingTaskId = null; $("modalTitle").textContent = "Add New Task"; $("taskForm").reset();
-  $("taskDate").value = $("dateFilter").value || formatDateForInput(new Date()); $("taskStatus").value = "Pending"; $("taskModal").classList.add("show");
-}
+    if (!API_URL || API_URL.includes("PASTE_YOUR")) {
+      posts = [];
+      renderCalendar();
+      return;
+    }
 
-function openEditModal(taskId) {
-  const task = allTasks.find(t => t.taskId === taskId); if (!task) return showToast("Task not found.", "error");
-  editingTaskId = taskId; $("modalTitle").textContent = "Edit Task"; $("taskDate").value = task.date; $("taskTime").value = to24Hour(task.timeSlot); $("taskName").value = task.taskName; $("taskCategory").value = task.category; $("taskUrgency").value = task.urgency; $("taskStatus").value = task.status; $("taskRemarks").value = task.remarks || ""; $("taskModal").classList.add("show");
-}
+    const response = await jsonp({
+      action: "getPosts",
+      year: currentDate.getFullYear(),
+      month: currentDate.getMonth() + 1
+    });
 
-function closeModal() { $("taskModal").classList.remove("show"); editingTaskId = null; }
+    if (!response.success) throw new Error(response.message || "Could not load posts.");
+    posts = response.posts || [];
+    renderCalendar();
+  }
 
-async function handleTaskSubmit(event) {
-  event.preventDefault();
-  const payload = { date: $("taskDate").value, timeSlot: formatTimeFromInput($("taskTime").value), taskName: $("taskName").value.trim(), category: $("taskCategory").value, urgency: $("taskUrgency").value, status: $("taskStatus").value, remarks: $("taskRemarks").value.trim() };
-  if (!payload.taskName) return showToast("Please enter a task name.", "error");
-  try {
-    const result = await apiPost({ action: editingTaskId ? "updateTask" : "addTask", ...(editingTaskId ? { taskId: editingTaskId } : {}), ...payload });
-    if (!result.success) throw new Error(result.message || "Could not save task.");
-    closeModal(); await loadAllData();
-  } catch (error) { showToast(error.message, "error"); }
-}
+  function renderCalendar() {
+    calendarGrid.innerHTML = "";
 
-async function handleDeleteTask(taskId) {
-  if (!confirm("Delete this task? This cannot be undone.")) return;
-  try { const result = await apiPost({ action: "deleteTask", taskId }); if (!result.success) throw new Error(result.message); await loadAllData(); } catch (error) { showToast(error.message, "error"); }
-}
+    if (!selectedPage && pages.length) selectedPage = pages[0].PageName;
+    const pagePosts = posts.filter(post => post.Page === selectedPage);
+    updateStats(pagePosts);
 
-async function handleCompleteTask(taskId) {
-  try { const result = await apiPost({ action: "completeTask", taskId }); if (!result.success) throw new Error(result.message); await loadAllData(); } catch (error) { showToast(error.message, "error"); }
-}
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startDay = firstDay.getDay();
+    const lastDate = new Date(year, month + 1, 0).getDate();
+    const prevLastDate = new Date(year, month, 0).getDate();
+    const fragment = document.createDocumentFragment();
 
-function formatDateForInput(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
-function formatDateForDisplay(value) { if (!value) return "—"; return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
-function formatTimeFromInput(value) { if (!value) return ""; const [h,m] = value.split(":").map(Number); const d = new Date(); d.setHours(h,m,0,0); return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); }
-function to24Hour(value) { if (!value) return ""; const d = new Date(`2000-01-01 ${value}`); if (Number.isNaN(d.getTime())) return ""; return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
-function convertTimeToMinutes(value) { const d = new Date(`2000-01-01 ${value}`); return Number.isNaN(d.getTime()) ? 99999 : d.getHours()*60+d.getMinutes(); }
-function slugify(value) { return String(value || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""); }
-function escapeHTML(value) { return String(value || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
-function showLoading(value) { $("loadingState").style.display = value ? "block" : "none"; }
-function showToast(message, type="success") { let toast = $("toast"); if (!toast) { toast = document.createElement("div"); toast.id = "toast"; document.body.appendChild(toast); } toast.className = `toast ${type} show`; toast.textContent = message; clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove("show"), 2800); }
+    for (let i = 0; i < 42; i++) {
+      const cell = document.createElement("div");
+      cell.className = "day-cell";
+      let dayNumber;
+      let cellDate;
+      let isMuted = false;
 
-window.openEditModal = openEditModal;
-window.handleDeleteTask = handleDeleteTask;
-window.handleCompleteTask = handleCompleteTask;
+      if (i < startDay) {
+        dayNumber = prevLastDate - startDay + i + 1;
+        cellDate = new Date(year, month - 1, dayNumber);
+        isMuted = true;
+      } else if (i >= startDay + lastDate) {
+        dayNumber = i - (startDay + lastDate) + 1;
+        cellDate = new Date(year, month + 1, dayNumber);
+        isMuted = true;
+      } else {
+        dayNumber = i - startDay + 1;
+        cellDate = new Date(year, month, dayNumber);
+      }
+
+      const dateString = formatDate(cellDate);
+      if (isMuted) cell.classList.add("muted");
+      if (dateString === formatDate(new Date())) cell.classList.add("today");
+
+      cell.innerHTML = `
+        <div class="day-number">${dayNumber}</div>
+        <div class="post-list"></div>
+        <div class="add-hint">+ Add</div>
+      `;
+
+      const dayPosts = pagePosts
+        .filter(post => normalizeDate(post.Date) === dateString)
+        .sort((a, b) => {
+          const timeCompare = (normalizeTime(a.Time) || "23:59").localeCompare(normalizeTime(b.Time) || "23:59");
+          return timeCompare !== 0 ? timeCompare : String(a.Title || "").localeCompare(String(b.Title || ""));
+        });
+
+      const postList = cell.querySelector(".post-list");
+      dayPosts.forEach(post => postList.appendChild(createPostCard(post, dateString)));
+
+      cell.addEventListener("click", () => openPostModal(dateString));
+      fragment.appendChild(cell);
+    }
+
+    calendarGrid.appendChild(fragment);
+  }
+
+  function createPostCard(post, dateString) {
+    const card = document.createElement("article");
+    const statusClass = getStatusClass(post.Status);
+    card.className = `post-pill ${statusClass}`;
+
+    const statusIcon = getStatusIcon(post.Status);
+    card.innerHTML = `
+      <button class="status-quick-btn" type="button" title="Update status" aria-label="Update status for ${escapeHtml(post.Title || "post")}">${statusIcon}</button>
+      <h4>${escapeHtml(post.Title || "Untitled Post")}</h4>
+      <div class="post-meta">
+        <span class="post-time-label">${formatDisplayTime(post.Time)}</span>
+        <p>${escapeHtml(post.Status || "Idea")}</p>
+      </div>
+    `;
+
+    card.addEventListener("click", event => {
+      event.stopPropagation();
+      openPostModal(dateString, post);
+    });
+
+    card.querySelector(".status-quick-btn").addEventListener("click", async event => {
+      event.stopPropagation();
+      await cyclePostStatus(post);
+    });
+
+    return card;
+  }
+
+  async function cyclePostStatus(post) {
+    const currentIndex = STATUS_ORDER.indexOf(post.Status);
+    const nextStatus = STATUS_ORDER[(currentIndex + 1 + STATUS_ORDER.length) % STATUS_ORDER.length];
+
+    try {
+      const response = await jsonp({
+        action: "updatePost",
+        id: post.ID,
+        page: post.Page || selectedPage,
+        date: normalizeDate(post.Date),
+        time: normalizeTime(post.Time),
+        title: post.Title || "",
+        caption: post.Caption || "",
+        status: nextStatus,
+        platform: post.Platform || "Facebook",
+        notes: post.Notes || ""
+      });
+
+      if (!response.success) throw new Error(response.message || "Could not update status.");
+      post.Status = nextStatus;
+      renderCalendar();
+      showToast(`Status changed to ${nextStatus}.`);
+    } catch (error) {
+      console.error(error);
+      showToast("Could not update status.", 3500);
+    }
+  }
+
+  function updateStats(list) {
+    Object.keys(counters).forEach(key => {
+      counters[key].textContent = list.filter(post => getStatusClass(post.Status) === key).length;
+    });
+  }
+
+  function openPostModal(dateString, post = null) {
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+    $("modalDateLabel").textContent = new Date(`${dateString}T00:00:00`).toLocaleDateString("en-US", {
+      month: "long", day: "numeric", year: "numeric"
+    });
+
+    inputs.date.value = dateString;
+
+    if (post) {
+      inputs.id.value = post.ID || "";
+      inputs.title.value = post.Title || "";
+      inputs.time.value = normalizeTime(post.Time);
+      inputs.caption.value = post.Caption || "";
+      inputs.status.value = post.Status || "Idea";
+      inputs.platform.value = post.Platform || "Facebook";
+      inputs.notes.value = post.Notes || "";
+      deletePostButton.classList.remove("hidden");
+    } else {
+      inputs.id.value = "";
+      inputs.title.value = "";
+      inputs.time.value = "";
+      inputs.caption.value = "";
+      inputs.status.value = "Idea";
+      inputs.platform.value = "Facebook";
+      inputs.notes.value = "";
+      deletePostButton.classList.add("hidden");
+    }
+
+    setTimeout(() => inputs.title.focus(), 50);
+  }
+
+  function closePostModal() {
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  async function savePost(event) {
+    event.preventDefault();
+    const title = inputs.title.value.trim();
+    if (!title) return showToast("Please enter a post title.", 3000);
+
+    const submitButton = postForm.querySelector('[type="submit"]');
+    submitButton.disabled = true;
+
+    try {
+      const response = await jsonp({
+        action: inputs.id.value ? "updatePost" : "addPost",
+        id: inputs.id.value,
+        page: selectedPage,
+        date: inputs.date.value,
+        time: inputs.time.value,
+        title,
+        caption: inputs.caption.value,
+        status: inputs.status.value,
+        platform: inputs.platform.value,
+        notes: inputs.notes.value
+      });
+
+      if (!response.success) throw new Error(response.message || "Could not save post.");
+      closePostModal();
+      await loadPosts();
+      showToast(inputs.id.value ? "Post updated." : "Post added.");
+    } catch (error) {
+      console.error(error);
+      showToast("Could not save post.", 3500);
+    } finally {
+      submitButton.disabled = false;
+    }
+  }
+
+  async function deletePost() {
+    if (!inputs.id.value || !confirm("Delete this post?")) return;
+    deletePostButton.disabled = true;
+
+    try {
+      const response = await jsonp({ action: "deletePost", id: inputs.id.value });
+      if (!response.success) throw new Error(response.message || "Could not delete post.");
+      closePostModal();
+      await loadPosts();
+      showToast("Post deleted.");
+    } catch (error) {
+      console.error(error);
+      showToast("Could not delete post.", 3500);
+    } finally {
+      deletePostButton.disabled = false;
+    }
+  }
+
+  function getStatusClass(status) {
+    const value = String(status || "Idea").trim().toLowerCase();
+    return ["created", "scheduled", "posted"].includes(value) ? value : "idea";
+  }
+
+  function getStatusIcon(status) {
+    return ({ Idea: "💡", Created: "✎", Scheduled: "◷", Posted: "✓" })[status] || "💡";
+  }
+
+  function formatMonthYear(date) {
+    return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date);
+  }
+
+  function formatDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function normalizeDate(value) {
+    if (!value) return "";
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const date = new Date(text);
+    return Number.isNaN(date.getTime()) ? text : formatDate(date);
+  }
+
+  function normalizeTime(value) {
+    if (!value) return "";
+    const text = String(value).trim();
+    if (/^\d{2}:\d{2}$/.test(text)) return text;
+    if (/^\d{1}:\d{2}$/.test(text)) return `0${text}`;
+    if (text.includes("T")) {
+      const date = new Date(text);
+      if (!Number.isNaN(date.getTime())) {
+        return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
+      }
+    }
+    const date = new Date(`1970-01-01T${text}`);
+    return Number.isNaN(date.getTime()) ? "" : `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function formatDisplayTime(value) {
+    const time = normalizeTime(value);
+    if (!time) return "No time";
+    const [hourString, minute] = time.split(":");
+    let hour = Number(hourString);
+    const period = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12 || 12;
+    return `${hour}:${minute} ${period}`;
+  }
+
+  function showToast(message, duration = 2200) {
+    clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.classList.add("show");
+    toastTimer = setTimeout(() => toast.classList.remove("show"), duration);
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+})();

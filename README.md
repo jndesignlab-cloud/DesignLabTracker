@@ -1,93 +1,131 @@
-# DesignLab Daily Tracker
+# DesignLab Tracker
 
-A minimalist task dashboard for DesignLab Creative Studio, built with HTML, CSS, JavaScript, Google Sheets, Google Apps Script, and GitHub Pages.
+A lightweight, open-source social media content planner built with HTML, CSS, JavaScript, Google Sheets, Google Apps Script, and GitHub Pages.
 
 ## Version
 
-**v1.1.0**
+Current release: **v1.1.0**
 
-## New in v1.1.0
+## Features
 
-- Simplified sidebar links:
-  - Dashboard
-  - Social Media Planner
-  - Portfolio Viewer
-  - Portfolio Admin
-- Collapsible Previous Tasks archive
-- Search and status filtering inside the archive
-- Pending Work Queue showing incomplete tasks across all dates
+- Monthly content calendar
+- Dynamic managed-page tabs from Google Sheets
+- Default pages: DesignLab and DesignLab Downloads
+- Add, edit, and delete posts
+- Time-based auto-sorting inside each calendar day
+- Statuses: Idea, Created, Scheduled, Posted
+- Quick status-update icon directly on each card
+- Current Manila time and date in the header
 - Floating refresh button
-- Floating statistics dashboard
-- All-time statistics, including completion rate, completed tasks, pending tasks, high-priority tasks, completed-this-week count, most active category, and average tasks per active day
-- Footer versioning and ownership details
-- Central `config.js` for the API URL and external links
+- Monthly status counters
+- Google Sheets database
+- Apps Script backend
+- GitHub Pages compatible
+- Responsive light DesignLab interface
+- Centralized settings in `config.js`
+- Footer version and last-refresh timestamp
 
-## Files
+## Project Structure
 
-- `index.html` — main interface
-- `style.css` — DesignLab visual system
-- `script.js` — frontend logic
-- `config.js` — links, app details, version, and Apps Script URL
-- `Code.gs` — Google Apps Script backend
-- `README.md` — setup and project documentation
+```text
+DesignLabTracker/
+├── index.html
+├── style.css
+├── script.js
+├── config.js
+├── README.md
+├── CHANGELOG.md
+├── LICENSE
+└── apps-script/
+    └── Code.gs
+```
 
 ## Setup
 
-### 1. Google Sheet
+### 1. Create the Google Sheet
 
-Create a sheet tab named `Tasks` with these headers:
+Create a Google Sheet, then open:
 
-```text
-Task ID | Date | Time Slot | Task Name | Category | Urgency | Status | Remarks | Created At | Updated At | Completed At
+`Extensions → Apps Script`
+
+Paste the contents of `apps-script/Code.gs`.
+
+Run this function once:
+
+```javascript
+setupPlannerSheets()
 ```
 
-### 2. Apps Script
+This creates or prepares:
 
-Open **Extensions → Apps Script**, replace the code with `Code.gs`, then deploy it as a Web App.
+- `Pages`
+- `Posts`
 
-Recommended deployment settings:
+The `Posts` sheet uses these headers:
+
+```text
+ID | Page | Date | Time | Title | Caption | Status | Platform | Notes | CreatedAt | UpdatedAt
+```
+
+### 2. Deploy Apps Script
+
+Go to:
+
+`Deploy → New deployment → Web app`
+
+Use:
 
 - Execute as: **Me**
 - Who has access: **Anyone**
 
-When updating the script later, edit the existing deployment and select **New version** so the Web App URL remains unchanged.
+Copy the URL ending in `/exec`.
 
-### 3. Configuration
+### 3. Configure the frontend
 
 Open `config.js` and replace:
 
-```js
-apiUrl: "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE"
+```javascript
+API_URL: "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE"
 ```
 
-Also add the correct URLs for the Social Media Planner and Portfolio Admin.
+with your Apps Script Web App URL.
 
-### 4. GitHub Pages
+### 4. Publish on GitHub Pages
 
-Upload the frontend files to your GitHub repository:
+Upload the files to your repository, then go to:
 
-- `index.html`
-- `style.css`
-- `script.js`
-- `config.js`
-- `README.md`
+`Settings → Pages`
 
-Then enable GitHub Pages using the `main` branch and `/root` folder.
+Choose:
 
-## Statistics
+- Source: Deploy from a branch
+- Branch: `main`
+- Folder: `/root`
 
-The statistics drawer is calculated from all task records loaded from Google Sheets. Completion rate is:
+## Quick Status Button
+
+Each calendar card has a small icon. Clicking it cycles through:
 
 ```text
-Completed Tasks ÷ Total Tasks × 100
+Idea → Created → Scheduled → Posted → Idea
 ```
 
-## Notes
+Clicking anywhere else on the card opens the full edit form.
 
-- Do not expose private credentials in `config.js`.
-- The Apps Script Web App URL is expected to be publicly callable because the frontend runs on GitHub Pages.
-- For a client-facing commercial version, consider adding authentication, per-user data separation, validation, backups, and a privacy notice.
+## Adding Future Pages
 
-## Credits
+Add rows to the `Pages` sheet:
 
-Developed for **DesignLab Creative Studio**.
+```text
+ID | PageName | IsActive | CreatedAt | UpdatedAt
+```
+
+Set `IsActive` to `TRUE`, refresh the app, and the new tab appears automatically.
+
+## Security Reminder
+
+Do not publish private client data, private Google Sheet URLs, tokens, or confidential links in the public repository. The Apps Script Web App URL is not a secret credential, but use a separate demo database for public demos.
+
+## License
+
+MIT License. See `LICENSE`.
