@@ -4,7 +4,7 @@ A lightweight, open-source social media content planner built with HTML, CSS, Ja
 
 ## Version
 
-Current release: **v1.1.0**
+Current release: **v1.2.0**
 
 ## Features
 
@@ -17,6 +17,10 @@ Current release: **v1.1.0**
 - Quick status-update icon directly on each card
 - Current Manila time and date in the header
 - Floating refresh button
+- Floating changelog button with in-app version history
+- Manual Hide Week / Show Week controls
+- Hidden-week preferences remembered per managed page and month
+- Frontend and backend duplicate-save protection
 - Monthly status counters
 - Google Sheets database
 - Apps Script backend
@@ -129,3 +133,16 @@ Do not publish private client data, private Google Sheet URLs, tokens, or confid
 ## License
 
 MIT License. See `LICENSE`.
+
+
+## Hide or Show a Week
+
+Each calendar row includes a small **Hide Week** control. A hidden row becomes a compact bar showing its date range; select **Show Week** to restore it. Hidden-week preferences are stored only in the current browser and do not alter Google Sheet data.
+
+## Duplicate Save Protection
+
+The Save button locks immediately after the first click. The Apps Script backend also uses a request token, cache, and script lock to ignore accidental repeated submissions. Replace `apps-script/Code.gs` and redeploy the Web App to enable the backend protection.
+
+## Changelog
+
+Use the floating information button above the refresh button to view version history directly inside the planner.

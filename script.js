@@ -13,6 +13,9 @@
   let posts = [];
   let clockTimer = null;
   let toastTimer = null;
+  let isLoading = false;
+  let isSaving = false;
+  const HIDDEN_WEEKS_STORAGE_KEY = "designlab-tracker-hidden-weeks";
 
   const $ = id => document.getElementById(id);
   const calendarGrid = $("calendarGrid");
@@ -21,6 +24,11 @@
   const pageTabs = $("pageTabs");
   const refreshButton = $("refreshButton");
   const toast = $("toast");
+  const savePostButton = $("savePostButton");
+  const changelogButton = $("changelogButton");
+  const changelogModal = $("changelogModal");
+  const closeChangelogButton = $("closeChangelog");
+  const changelogContent = $("changelogContent");
 
   const counters = {
     idea: $("ideaCount"),
@@ -50,6 +58,7 @@
   async function init() {
     applyVersionInfo();
     setupControls();
+    renderChangelog();
     startClock();
 
     if (!API_URL || API_URL.includes("PASTE_YOUR")) {
@@ -64,7 +73,7 @@
 
   function applyVersionInfo() {
     $("footerAppName").textContent = config.APP_NAME || "DesignLab Content Planner";
-    $("footerVersion").textContent = config.APP_VERSION || "1.1.0";
+    $("footerVersion").textContent = config.APP_VERSION || "1.2.0";
   }
 
   function setupControls() {
@@ -84,12 +93,20 @@
     });
 
     refreshButton.addEventListener("click", refreshAll);
+    changelogButton.addEventListener("click", openChangelog);
+    closeChangelogButton.addEventListener("click", closeChangelog);
+    changelogModal.addEventListener("click", event => {
+      if (event.target === changelogModal) closeChangelog();
+    });
     closeModalButton.addEventListener("click", closePostModal);
     modal.addEventListener("click", event => {
       if (event.target === modal) closePostModal();
     });
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape") closePostModal();
+      if (event.key === "Escape") {
+        closePostModal();
+        closeChangelog();
+      }
     });
     postForm.addEventListener("submit", savePost);
     deletePostButton.addEventListener("click", deletePost);
@@ -124,6 +141,8 @@
   }
 
   async function refreshAll() {
+    if (isLoading) return;
+    isLoading = true;
     setRefreshing(true);
     try {
       await loadPages();
@@ -134,6 +153,7 @@
       console.error(error);
       showToast("Could not refresh the planner.", 4000);
     } finally {
+      isLoading = false;
       setRefreshing(false);
     }
   }
@@ -158,7 +178,7 @@
 
       window[callbackName] = data => cleanup(null, data);
       script.onerror = () => cleanup(new Error("API request failed."));
-      script.src = `${API_URL}?${new URLSearchParams({ ...params, callback: callbackName })}`;
+      script.src = `${API_URL}?${new URLSearchParams({ ...params, callback: callbackName, _: Date.now() })}`;
       document.body.appendChild(script);
     });
   }
@@ -225,65 +245,157 @@
   }
 
   function renderCalendar() {
-    calendarGrid.innerHTML = "";
-
     if (!selectedPage && pages.length) selectedPage = pages[0].PageName;
     const pagePosts = posts.filter(post => post.Page === selectedPage);
     updateStats(pagePosts);
 
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startDay = firstDay.getDay();
+    const startDay = new Date(year, month, 1).getDay();
     const lastDate = new Date(year, month + 1, 0).getDate();
     const prevLastDate = new Date(year, month, 0).getDate();
+    const postsByDate = groupPostsByDate(pagePosts);
+    const hiddenWeeks = getHiddenWeeks(year, month, selectedPage);
     const fragment = document.createDocumentFragment();
 
-    for (let i = 0; i < 42; i++) {
-      const cell = document.createElement("div");
-      cell.className = "day-cell";
-      let dayNumber;
-      let cellDate;
-      let isMuted = false;
+    for (let weekIndex = 0; weekIndex < 6; weekIndex++) {
+      const weekWrapper = document.createElement("section");
+      weekWrapper.className = "calendar-week";
+      weekWrapper.dataset.weekIndex = String(weekIndex);
 
-      if (i < startDay) {
-        dayNumber = prevLastDate - startDay + i + 1;
-        cellDate = new Date(year, month - 1, dayNumber);
-        isMuted = true;
-      } else if (i >= startDay + lastDate) {
-        dayNumber = i - (startDay + lastDate) + 1;
-        cellDate = new Date(year, month + 1, dayNumber);
-        isMuted = true;
-      } else {
-        dayNumber = i - startDay + 1;
-        cellDate = new Date(year, month, dayNumber);
+      const weekGrid = document.createElement("div");
+      weekGrid.className = "calendar-week-grid";
+      const weekDates = [];
+
+      for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+        const i = weekIndex * 7 + dayOffset;
+        const cell = document.createElement("div");
+        cell.className = "day-cell";
+        let dayNumber;
+        let cellDate;
+        let isMuted = false;
+
+        if (i < startDay) {
+          dayNumber = prevLastDate - startDay + i + 1;
+          cellDate = new Date(year, month - 1, dayNumber);
+          isMuted = true;
+        } else if (i >= startDay + lastDate) {
+          dayNumber = i - (startDay + lastDate) + 1;
+          cellDate = new Date(year, month + 1, dayNumber);
+          isMuted = true;
+        } else {
+          dayNumber = i - startDay + 1;
+          cellDate = new Date(year, month, dayNumber);
+        }
+
+        weekDates.push(cellDate);
+        const dateString = formatDate(cellDate);
+        if (isMuted) cell.classList.add("muted");
+        if (dateString === formatDate(new Date())) cell.classList.add("today");
+
+        const dayNumberEl = document.createElement("div");
+        dayNumberEl.className = "day-number";
+        dayNumberEl.textContent = dayNumber;
+
+        const postList = document.createElement("div");
+        postList.className = "post-list";
+        const dayPosts = (postsByDate.get(dateString) || []).sort(comparePostsByTime);
+        dayPosts.forEach(post => postList.appendChild(createPostCard(post, dateString)));
+
+        const addHint = document.createElement("div");
+        addHint.className = "add-hint";
+        addHint.textContent = "+ Add";
+
+        cell.append(dayNumberEl, postList, addHint);
+        cell.addEventListener("click", () => openPostModal(dateString));
+        weekGrid.appendChild(cell);
       }
 
-      const dateString = formatDate(cellDate);
-      if (isMuted) cell.classList.add("muted");
-      if (dateString === formatDate(new Date())) cell.classList.add("today");
+      const rangeLabel = formatWeekRange(weekDates[0], weekDates[6]);
 
-      cell.innerHTML = `
-        <div class="day-number">${dayNumber}</div>
-        <div class="post-list"></div>
-        <div class="add-hint">+ Add</div>
-      `;
+      const hideButton = document.createElement("button");
+      hideButton.type = "button";
+      hideButton.className = "week-toggle week-hide-button";
+      hideButton.textContent = "Hide Week";
+      hideButton.title = `Hide ${rangeLabel}`;
+      hideButton.addEventListener("click", event => {
+        event.stopPropagation();
+        setWeekHidden(year, month, selectedPage, weekIndex, true);
+        renderCalendar();
+      });
 
-      const dayPosts = pagePosts
-        .filter(post => normalizeDate(post.Date) === dateString)
-        .sort((a, b) => {
-          const timeCompare = (normalizeTime(a.Time) || "23:59").localeCompare(normalizeTime(b.Time) || "23:59");
-          return timeCompare !== 0 ? timeCompare : String(a.Title || "").localeCompare(String(b.Title || ""));
-        });
+      const collapsedBar = document.createElement("div");
+      collapsedBar.className = "collapsed-week-bar";
+      const collapsedLabel = document.createElement("span");
+      collapsedLabel.textContent = rangeLabel;
+      const showButton = document.createElement("button");
+      showButton.type = "button";
+      showButton.className = "week-toggle week-show-button";
+      showButton.textContent = "Show Week";
+      showButton.addEventListener("click", event => {
+        event.stopPropagation();
+        setWeekHidden(year, month, selectedPage, weekIndex, false);
+        renderCalendar();
+      });
 
-      const postList = cell.querySelector(".post-list");
-      dayPosts.forEach(post => postList.appendChild(createPostCard(post, dateString)));
-
-      cell.addEventListener("click", () => openPostModal(dateString));
-      fragment.appendChild(cell);
+      collapsedBar.append(collapsedLabel, showButton);
+      weekWrapper.append(weekGrid, hideButton, collapsedBar);
+      if (hiddenWeeks.has(weekIndex)) weekWrapper.classList.add("is-collapsed");
+      fragment.appendChild(weekWrapper);
     }
 
-    calendarGrid.appendChild(fragment);
+    calendarGrid.replaceChildren(fragment);
+  }
+
+  function groupPostsByDate(list) {
+    const map = new Map();
+    list.forEach(post => {
+      const date = normalizeDate(post.Date);
+      if (!map.has(date)) map.set(date, []);
+      map.get(date).push(post);
+    });
+    return map;
+  }
+
+  function comparePostsByTime(a, b) {
+    const timeCompare = (normalizeTime(a.Time) || "23:59").localeCompare(normalizeTime(b.Time) || "23:59");
+    return timeCompare !== 0 ? timeCompare : String(a.Title || "").localeCompare(String(b.Title || ""));
+  }
+
+  function getHiddenWeeks(year, month, pageName) {
+    try {
+      const stored = JSON.parse(localStorage.getItem(HIDDEN_WEEKS_STORAGE_KEY) || "{}");
+      const key = `${pageName || "all"}::${year}-${String(month + 1).padStart(2, "0")}`;
+      return new Set((Array.isArray(stored[key]) ? stored[key] : []).map(Number));
+    } catch (error) {
+      console.warn("Could not read hidden-week preferences.", error);
+      return new Set();
+    }
+  }
+
+  function setWeekHidden(year, month, pageName, weekIndex, hidden) {
+    try {
+      const stored = JSON.parse(localStorage.getItem(HIDDEN_WEEKS_STORAGE_KEY) || "{}");
+      const key = `${pageName || "all"}::${year}-${String(month + 1).padStart(2, "0")}`;
+      const values = new Set((Array.isArray(stored[key]) ? stored[key] : []).map(Number));
+      hidden ? values.add(weekIndex) : values.delete(weekIndex);
+      stored[key] = [...values].sort((a, b) => a - b);
+      localStorage.setItem(HIDDEN_WEEKS_STORAGE_KEY, JSON.stringify(stored));
+    } catch (error) {
+      console.warn("Could not save hidden-week preferences.", error);
+    }
+  }
+
+  function formatWeekRange(startDate, endDate) {
+    const sameMonth = startDate.getMonth() === endDate.getMonth();
+    const sameYear = startDate.getFullYear() === endDate.getFullYear();
+    if (sameMonth && sameYear) {
+      return `${startDate.toLocaleString("en-US", { month: "short" })} ${startDate.getDate()}–${endDate.getDate()}, ${endDate.getFullYear()}`;
+    }
+    if (sameYear) {
+      return `${startDate.toLocaleString("en-US", { month: "short" })} ${startDate.getDate()} – ${endDate.toLocaleString("en-US", { month: "short" })} ${endDate.getDate()}, ${endDate.getFullYear()}`;
+    }
+    return `${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} – ${endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
   }
 
   function createPostCard(post, dateString) {
@@ -381,17 +493,24 @@
   }
 
   function closePostModal() {
+    if (isSaving) return;
     modal.classList.add("hidden");
     modal.setAttribute("aria-hidden", "true");
   }
 
   async function savePost(event) {
     event.preventDefault();
+    if (isSaving) return;
+
     const title = inputs.title.value.trim();
     if (!title) return showToast("Please enter a post title.", 3000);
 
-    const submitButton = postForm.querySelector('[type="submit"]');
-    submitButton.disabled = true;
+    isSaving = true;
+    savePostButton.disabled = true;
+    savePostButton.textContent = "Saving...";
+    const requestToken = window.crypto?.randomUUID
+      ? window.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     try {
       const response = await jsonp({
@@ -404,18 +523,23 @@
         caption: inputs.caption.value,
         status: inputs.status.value,
         platform: inputs.platform.value,
-        notes: inputs.notes.value
+        notes: inputs.notes.value,
+        requestToken
       });
 
       if (!response.success) throw new Error(response.message || "Could not save post.");
-      closePostModal();
+      const wasEditing = Boolean(inputs.id.value);
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
       await loadPosts();
-      showToast(inputs.id.value ? "Post updated." : "Post added.");
+      showToast(wasEditing ? "Post updated." : "Post added.");
     } catch (error) {
       console.error(error);
-      showToast("Could not save post.", 3500);
+      showToast(error.message || "Could not save post.", 3500);
     } finally {
-      submitButton.disabled = false;
+      isSaving = false;
+      savePostButton.disabled = false;
+      savePostButton.textContent = "Save Post";
     }
   }
 
@@ -485,6 +609,37 @@
     const period = hour >= 12 ? "PM" : "AM";
     hour = hour % 12 || 12;
     return `${hour}:${minute} ${period}`;
+  }
+
+  function renderChangelog() {
+    const fragment = document.createDocumentFragment();
+    (config.CHANGELOG || []).forEach(item => {
+      const section = document.createElement("section");
+      section.className = "changelog-version";
+      const title = document.createElement("h4");
+      title.textContent = `Version ${item.version}`;
+      const date = document.createElement("time");
+      date.textContent = item.date;
+      const list = document.createElement("ul");
+      (item.changes || []).forEach(change => {
+        const li = document.createElement("li");
+        li.textContent = change;
+        list.appendChild(li);
+      });
+      section.append(title, date, list);
+      fragment.appendChild(section);
+    });
+    changelogContent.replaceChildren(fragment);
+  }
+
+  function openChangelog() {
+    changelogModal.classList.remove("hidden");
+    changelogModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeChangelog() {
+    changelogModal.classList.add("hidden");
+    changelogModal.setAttribute("aria-hidden", "true");
   }
 
   function showToast(message, duration = 2200) {

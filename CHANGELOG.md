@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.2.0 — 2026-07-02
+
+### Added
+- Manual Hide Week / Show Week controls for individual calendar rows
+- Browser memory for hidden weeks, separated by page and month
+- Floating changelog button and in-app version history
+- Frontend save lock and backend duplicate-request protection
+
+### Preserved and Improved
+- Time-based automatic sorting
+- Quick status-update icons
+- Floating refresh button
+- Live Manila date and time in the upper-right
+- Dynamic managed-page tabs
+- Lighter Inter typography and fast document-fragment rendering
+
 ## v1.1.0 — 2026-06-21
 
 ### Added
